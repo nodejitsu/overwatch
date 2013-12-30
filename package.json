@@ -1,0 +1,21 @@
+{
+  "name": "overwatch",
+  "description": "Module to watch over multiple couches to ensure they are replicating appropriately",
+  "version": "0.0.0",
+  "author": "Jarrett Cruger <jcrugzz@gmail.com>",
+  "repository": {
+    "url": "git://github.com/jcrugzz/overwatch.git"
+  },
+  "main": "index.js",
+  "scripts": {
+    "test": "tape test/*.js"
+  },
+  "engines": {
+    "node": "0.10.x"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "tape": "2.1.x"
+  },
+  "license": "MIT"
+}
