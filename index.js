@@ -24,6 +24,9 @@ var Overwatch = module.exports = function (options) {
   if (!Array.isArray(options.couches)) {
     throw new Error('You must provide an array of couch objects!');
   }
+  //
+  // Remark: Dirty configuration setup to support the couch options
+  //
   var hubs = 0;
   this.couches = options.couches
     .reduce(function (acc, couch, idx) {
@@ -36,6 +39,7 @@ var Overwatch = module.exports = function (options) {
       // We only set push/pull on non `hub`
       // We also allow false to override the default true value
       // as we assume bi-directional replication by default
+      // TODO: support these options
       //
       acc[couch.url] = couch.hub
         ? { hub: couch.hub }
@@ -55,8 +59,10 @@ var Overwatch = module.exports = function (options) {
     throw new Error('There can be ONLY ONE hub!');
   }
 
-  this.timeout = options.timeout || 30 * 1000;
-  this.buffer = options.buffer === false ? false : true;
+  this.timeout = options.timeout || 5 * 1000;
+  //
+  // Remark: Function for filtering out custom databases
+  //
   this.filter = typeof options.filter === 'function'
     ? options.filter
     : function () { return true }
@@ -68,6 +74,10 @@ var Overwatch = module.exports = function (options) {
 
 util.inherits(Overwatch, events.EventEmitter);
 
+//
+// ### function watch
+// Begin watching the couches!
+//
 Overwatch.prototype.watch = function () {
   this.fetchDbs(this.setup.bind(this));
 };
@@ -82,7 +92,8 @@ Overwatch.prototype.fetchDbs = function (callback) {
 
       self.dbs = dbs.filter(self.filter);
       //
-      // TODO: Start replication on spoke DBs based on the hub dbs
+      // TODO: Start replication on spoke DBs based on the hub dbs if they do
+      // not exist
       //
       callback();
     })
@@ -122,7 +133,7 @@ Overwatch.prototype.setup = function () {
 Overwatch.prototype.onCaughtUp = function (db, couch, seqId) {
   var self = this;
 
-  this.emit('caughtUp', db, couch, seqId);
+  this.emit('caughtUp', { db: db, couch: couch, seqId: seqId });
 
   var allCaughtUp =
     Object.keys(this.followers[db])
@@ -190,7 +201,7 @@ Overwatch.prototype.processChange = function (db, couch, change) {
   rev = change.changes && change.changes[0].rev,
   id = change.id + '@' + rev;
 
-  this.emit('processChange', db, couch, rev, change.id);
+  this.emit('processChange', { db: db, couch: couch, rev: rev, id: change.id });
   //
   // Check for fulfillments for this change,
   // if there are no fulfillments, set a fulfillment on the other couches
@@ -253,16 +264,17 @@ Overwatch.prototype.unFulfilled = function (db, couch, source, id, seq) {
         })
 
       return !fulfilled
-        ? onError(new Error('unfulfilled, you should take action'));
+        ? onError(new Error('Failed to replicate in a timely manner'));
         : falsePositive()
     })
   );
 
   function onError(err) {
-    this.emit('unfulfilled', err);
+    this.emit('unfulfilled', { error: err, db: db, target: couch, source: source});
   }.bind(this);
 
   function falsePositive () {
+
     //
     // Remark: not sure what I should emit here to keep the events
     // un-namespaced
