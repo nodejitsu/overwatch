@@ -13,20 +13,35 @@ means that we take one `hub` couch and allow `n` number of `spoke`s that all
 replicate through the `hub` couch. This prevents redundant replication and makes
 the replication model much simpler.
 
-While this does introduce a single-point-of-failure, `overwatch` will detect the
-one case that this matters (with a proper `inactivity_ms` option on [`follow`])
-and this can be managed. Remember, we are just using regular CouchDB, no
-bigcouch yet ;).
-
 ## Concepts
 
 ### Followers
 
+In `overwatch`, `followers` are the data structure of [`follow`] feeds that are used
+to monitor the changes feeds of each couchdb that you would like. The various
+databases are correctly associated with the feeds for all of the couches being
+monitored. This allows us to set proper [`fulfillments`](#Fulfillments).
+
 ### Buffering
+
+The follow feeds have two states, `bufferChange` and `processChange`. The
+`bufferChange` state allows us to buffer all of the past changes from CouchDB to
+be re-emitted when we want to process them. The timing for processing is key here as
+we do not want to begin processing until *ALL* couches at a particular database
+our caught up on their changes. When this occurs, we perform a full audit of the
+couches for that database and begin setting fulfillments.
 
 ### Fulfillments
 
-`overwatch` has this concept of fulfillments which it uses
+`overwatch` has this concept of `fulfillments` which is a timer that is set
+for each time we receive a new `change` event from [`follow`]. Since we are
+listening on multiple couch `_changes` feeds to ensure replication is occurring,
+we need a way to determinsitically evaluate that this occured. If two CouchDBs
+are assumed to be replicating their `foo` databases, if we receive a change on
+one and not the other, CouchDB has failed to fulfill its promise to us. This is
+where we emit the `unfulfilled` event for you to take action on this!
+
+## Example
 
 ```js
 
@@ -65,7 +80,8 @@ var watcher = overwatch({
 watcher.on('error', function (err) {
   //
   // Remark: this error is probably from `follow` and we should crash as its
-  // probably an unresponsive couch
+  // probably an unresponsive couch and we have bigger problems.
+  // This is tweaked through setting the `inactivity_ms` in the follow options object.
   //
   console.error(err);
   process.exit(1);
@@ -81,7 +97,7 @@ watcher.on('live', function (db) {
 //
 // Log some events when we process each change for each couch and database
 //
-watcher.on('process:change', function (change) {
+watcher.on('processChange', function (change) {
   console.log('processing change');
   console.log('couch url ' + change.couch)
   console.log('database ' + change.db);
@@ -110,11 +126,10 @@ watcher.on('unfulfilled', function (unfulfilled) {
 // database. We will keep buffering changes until all of the other couches
 // at this database are caught up
 //
-watcher.on('caught:up', function(feed) {
+watcher.on('caughtUp', function(feed) {
   console.log('Feed for ' + feed.db ' on couch url' + feed.couch
     + ' is caught up with sequence id ' + feed.seqId);
 });
-
 
 ```
 
