@@ -13,6 +13,13 @@ var follow = require('follow'),
 
 var extend = util._extend;
 
+//
+// ### function Overwatch (options)
+// #### @options {Object} Options that we accept
+// ##### @couches {Array} An array of couch objects to watch
+// ##### @timeout {ms} Milliseconds that we want for a fulfillment timeout
+// #####
+//
 var Overwatch = module.exports = function (options) {
   if (!(this instanceof Overwatch)) { return new Overwatch(options) }
   events.EventEmitter.call(this);
@@ -29,7 +36,7 @@ var Overwatch = module.exports = function (options) {
   //
   var hubs = 0;
   this.couches = options.couches
-    .reduce(function (acc, couch, idx) {
+    .reduce(function (acc, couch) {
       if (couch.hub) {
         hubs++;
         this.hub = couch.url;
@@ -72,16 +79,24 @@ var Overwatch = module.exports = function (options) {
 
 };
 
+//
+// We are EventEmitter!
+//
 util.inherits(Overwatch, events.EventEmitter);
 
 //
-// ### function watch
+// ### function watch()
 // Begin watching the couches!
 //
 Overwatch.prototype.watch = function () {
   this.fetchDbs(this.setup.bind(this));
 };
 
+//
+// ### function fetchDbs(callback)
+// #### @callback {function} Continuation to call upon fetch
+// Fetch the databases from the Hub CouchDB
+//
 Overwatch.prototype.fetchDbs = function (callback) {
   var self = this;
 
@@ -93,13 +108,17 @@ Overwatch.prototype.fetchDbs = function (callback) {
       self.dbs = dbs.filter(self.filter);
       //
       // TODO: Start replication on spoke DBs based on the hub dbs if they do
-      // not exist
+      // not exist. We'll also need to do some trickery to postpone audit
       //
       callback();
     })
   );
 };
 
+//
+// ### function setup()
+// Setup all of the data structures
+//
 Overwatch.prototype.setup = function () {
   this.followers = this.dbs.reduce(function (acc, db) {
     var feeds = Object.keys(this.couches).reduce(function(assoc, url) {
@@ -130,10 +149,21 @@ Overwatch.prototype.setup = function () {
   }.bind(this), {});
 };
 
-Overwatch.prototype.onCaughtUp = function (db, couch, seqId) {
+//
+// ### function onCatchUp (db, couch, seqId)
+// #### @db {String} Database that just caught up to live
+// #### @couch {String} couch URL that just caught up to live
+// #### @seqId {Number} Seqeunce ID of the couch
+// Called on follow's catchup event and checks the associated couches to see if
+// they have also caught up already. If this is the case, we switch the feed
+// state and begin auditing and watching the couches!
+//
+Overwatch.prototype.onCatchUp = function (db, couch, seqId) {
   var self = this;
-
-  this.emit('caughtUp', { db: db, couch: couch, seqId: seqId });
+  //
+  // A proxy of follow's catchup event
+  //
+  this.emit('catchUp', { db: db, couch: couch, seqId: seqId });
 
   var allCaughtUp =
     Object.keys(this.followers[db])
@@ -150,10 +180,16 @@ Overwatch.prototype.onCaughtUp = function (db, couch, seqId) {
   //
   if (allCaughtUp) {
     this.switchFeedState(db);
-    this.catchUp(db);
+    this.audit(db);
   }
 };
 
+//
+// ### function switchFeedState(db)
+// #### @db {String} Database that we are switching the feeds for
+// Switch the state of the feed from buffering to processing so that we can
+// then perform a full Audit and begin processing live changes
+//
 Overwatch.prototype.switchFeedState = function (db) {
   var feeds = this.followers[db],
       feedKeys = Object.keys(feeds);
@@ -164,12 +200,18 @@ Overwatch.prototype.switchFeedState = function (db) {
   }
 };
 
-Overwatch.prototype.catchUp = function (db) {
+//
+// ### function audit(db)
+// #### @db {String} database we are auditing for all the couches
+// Emit all of the buffered changes on the various feeds for this database
+// in order to perform a full audit
+//
+Overwatch.prototype.audit = function (db) {
   var feeds = this.followers[db],
       buffers = this.buffers[db],
       bufferKeys = Object.keys(buffers);
 
-  this.emit('catchUp', db);
+  this.emit('audit', db);
 
   for (var i=0; i<bufferKeys.length; i++) {
     emitAllTheThings(bufferKeys[i]);
@@ -187,19 +229,34 @@ Overwatch.prototype.catchUp = function (db) {
 
 };
 
+//
+// ### function bufferChange (db, couch, change)
+// #### @db {String} Name of database we are buffering for
+// #### @couch {String} URL of the couch we are monitoring
+// #### @change {Change} Follow change object to push onto the array
+// Buffer each change object onto the appropriate buffer
+//
 Overwatch.prototype.bufferChange = function (db, couch, change) {
   this.buffers[db][couch].push(change);
 };
 
+//
+// ### function processChange (db, couch, change)
+// #### @db {String} Name of database we are processing
+// #### @couch {String} Couch URL that we are processing
+// #### @change {Change} Follow change object to get information from
+// Process the change from the follow feed that either sets up a fulfillment
+// or fulfill a previous fulfillment
+//
 Overwatch.prototype.processChange = function (db, couch, change) {
   var fulfillments = this.fulfillments[db],
-  fKeys = Object.keys(fulfillments),
-  timeout = this.timeout,
-  //
-  // This should always be valid
-  //
-  rev = change.changes && change.changes[0].rev,
-  id = change.id + '@' + rev;
+      fKeys = Object.keys(fulfillments),
+      timeout = this.timeout,
+      //
+      // This should always be valid
+      //
+      rev = change.changes && change.changes[0].rev,
+      id = change.id + '@' + rev;
 
   this.emit('processChange', { db: db, couch: couch, rev: rev, id: change.id });
   //
@@ -207,12 +264,13 @@ Overwatch.prototype.processChange = function (db, couch, change) {
   // if there are no fulfillments, set a fulfillment on the other couches
   //
   if (!fulfillments[couch][id]) {
+    this.emit('setFulfillment', { db: db, couch: couch, rev: rev, id: change.id });
     return fKeys.filter(function (couchUrl) {
       return couchUrl !== couch;
     })
     .forEach(function (key) {
       fulfillments[key][id] =
-        setTimeout(this.unFulfilled.bind(this, db, key, couch, id, change.seq), timeout);
+        setTimeout(this.unfulfilled.bind(this, db, key, couch, id, change.seq), timeout);
     }, this);
   }
 
@@ -220,11 +278,22 @@ Overwatch.prototype.processChange = function (db, couch, change) {
   // Remark: Ok so if we have a fulfillment for ourselves, replication
   // succeeded and couch is behaving properly
   //
+  this.emit('fulfilled', { db: db, couch: couch, rev: rev, id: change.id})
   clearTimeout(fulfillments[couch][id]);
   this.fulfillments[db][couch][id] = null;
 };
 
-Overwatch.prototype.unFulfilled = function (db, couch, source, id, seq) {
+//
+// ### function unfulfilled(db, couch, source, id, seq)
+// #### @db {String} Database string
+// #### @couch {String} CouchDB URL that didn't receive the exact change
+// #### @source {String} CouchDB URL that received change
+// #### @id {Sring} ID of document
+// #### @seq {String} sequenceId
+// This is where we assess if the failure to receive a change was valid or not
+// and emit `unfulfilled` if that happens to be the case
+//
+Overwatch.prototype.unfulfilled = function (db, couch, source, id, seq) {
   var self = this;
       pieces = id.split('@'),
       nId = pieces[0],
@@ -244,7 +313,7 @@ Overwatch.prototype.unFulfilled = function (db, couch, source, id, seq) {
       catch(ex) { return onError(ex) }
       if (!doc || !doc._revs_info) {
         error = new Error('No document at : ' + url);
-        return onError(error);
+        return onUnfulfilled(error);
       }
       //
       // Check and see if the revision exists somewhere in the tree, if not
@@ -264,21 +333,17 @@ Overwatch.prototype.unFulfilled = function (db, couch, source, id, seq) {
         })
 
       return !fulfilled
-        ? onError(new Error('Failed to replicate in a timely manner'));
-        : falsePositive()
+        ? onUnfulfilled(new Error('Failed to replicate in a timely manner'));
+        : onFulfilled()
     })
   );
 
-  function onError(err) {
+  function onUnfulfilled(err) {
     this.emit('unfulfilled', { error: err, db: db, target: couch, source: source});
   }.bind(this);
 
-  function falsePositive () {
-
-    //
-    // Remark: not sure what I should emit here to keep the events
-    // un-namespaced
-    //
+  function onFulfilled () {
+    this.emit('fulfilled', { db: db, couch: couch, rev: rev, id: nId });
   }.bind(this);
 
 };
