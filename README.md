@@ -123,10 +123,11 @@ watcher.on('unfulfilled', function (unfulfilled) {
 
 //
 // Emits when we are listening on live changes for a particular couch and
-// database. We will keep buffering changes until all of the other couches
-// at this database are caught up
+// database. It is a proxy of `follow`s catchup event and is just a signal of
+// progress in the initialization. We may still be buffering events if this is
+// not the last database to catchup
 //
-watcher.on('caughtUp', function(feed) {
+watcher.on('catchUp', function(feed) {
   console.log('Feed for ' + feed.db ' on couch url' + feed.couch
     + ' is caught up with sequence id ' + feed.seqId);
 });
