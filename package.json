@@ -13,7 +13,11 @@
   "engines": {
     "node": "0.10.x"
   },
-  "dependencies": {},
+  "dependencies": {
+    "hyperquest": "~0.1.8",
+    "concat-stream": "~1.2.1",
+    "follow": "~0.10.4"
+  },
   "devDependencies": {
     "tape": "2.1.x"
   },
