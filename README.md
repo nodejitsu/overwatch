@@ -17,10 +17,10 @@ the replication model much simpler.
 
 ### Followers
 
-In `overwatch`, `followers` are the data structure of [`follow`] feeds that are used
+In `overwatch`, `followers` are the data structure of [`follow`][follow] feeds that are used
 to monitor the changes feeds of each couchdb that you would like. The various
 databases are correctly associated with the feeds for all of the couches being
-monitored. This allows us to set proper [`fulfillments`](#Fulfillments).
+monitored. This allows us to set proper [`fulfillments`](#fulfillments).
 
 ### Buffering
 
@@ -34,7 +34,7 @@ couches for that database and begin setting fulfillments.
 ### Fulfillments
 
 `overwatch` has this concept of `fulfillments` which is a timer that is set
-for each time we receive a new `change` event from [`follow`]. Since we are
+for each time we receive a new `change` event from [`follow`][follow]. Since we are
 listening on multiple couch `_changes` feeds to ensure replication is occurring,
 we need a way to determinsitically evaluate that this occured. If two CouchDBs
 are assumed to be replicating their `foo` databases, if we receive a change on
