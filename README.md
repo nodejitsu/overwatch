@@ -4,7 +4,7 @@ A deterministic couchdb replication watcher.
 
 Overwatch is an `EventEmitter` that emits events reflecting various states of
 the couches it watches. It has a fairly simple api that allows you to easily
-setup and watch `bi-directional` replication.
+watch and monitor `bi-directional` replication.
 
 ## Design
 
@@ -38,7 +38,8 @@ for each time we receive a new `change` event from [`follow`][follow]. Since we 
 listening on multiple couch `_changes` feeds to ensure replication is occurring,
 we need a way to determinsitically evaluate that this occured. If two CouchDBs
 are assumed to be replicating their `foo` databases, if we receive a change on
-one and not the other, CouchDB has failed to fulfill its promise to us. This is
+one and not the other (with some extra checking involved),
+CouchDB has failed to fulfill its promise to us. This is
 where we emit the `unfulfilled` event for you to take action on this!
 
 ## Example
