@@ -113,7 +113,7 @@ watcher.on('processChange', function (change) {
 watcher.on('unfulfilled', function (unfulfilled) {
   var source = unfulfilled.source,
       target = unfulfilled.target,
-      error = unfulfilled.err,
+      error = unfulfilled.error,
       db    = unfulfilled.db;
 
   console.error(error);
