@@ -100,11 +100,10 @@ Overwatch.prototype.watch = function () {
 Overwatch.prototype.fetchDbs = function (callback) {
   var self = this;
 
-  hyperquest(this.hub + '/all_dbs')
+  hyperquest(this.hub + '/_all_dbs')
     .pipe(concat(function (dbs) {
       try { dbs = JSON.parse(dbs) }
       catch (ex) { self.emit('error', new Error('Hub DB unreachable')) }
-
       self.dbs = dbs.filter(self.filter);
       //
       // TODO: Start replication on spoke DBs based on the hub dbs if they do
@@ -122,8 +121,8 @@ Overwatch.prototype.fetchDbs = function (callback) {
 Overwatch.prototype.setup = function () {
   this.followers = this.dbs.reduce(function (acc, db) {
     var feeds = Object.keys(this.couches).reduce(function(assoc, url) {
-      var opts = extend({ db: url }, this.follow),
-          feed = assoc[url] = new feed.follow(opts);
+      var opts = extend({ db: [url, db].join('/') }, this.follow),
+          feed = assoc[url] = new follow.Feed(opts);
 
       this.buffers[db] = this.buffers[db] || {};
       this.buffers[db][url] = [];
@@ -137,7 +136,7 @@ Overwatch.prototype.setup = function () {
       // just start auditing from the live state
       //
       feed.on('change', this.bufferChange.bind(this, db, url));
-      feed.on('error', this.onFeedError.bind(this));
+      feed.on('error', this.emit.bind(this, 'error'));
 
       feed.follow();
 
@@ -222,7 +221,7 @@ Overwatch.prototype.audit = function (db) {
   function emitAllTheThings (key) {
     var change;
 
-    while (change = buggers[key].shift()) {
+    while (change = buffers[key].shift()) {
       feeds[key].emit('change', change);
     }
   }
@@ -307,10 +306,10 @@ Overwatch.prototype.unfulfilled = function (db, couch, source, id, seq) {
   // assess the false positive because sometimes ALL the revisions
   //
   hyperquest(url)
-    .on('error', onError)
+    .on('error', onUnfulfilled)
     .pipe(concat(function (doc) {
       try { doc = JSON.parse(doc) }
-      catch(ex) { return onError(ex) }
+      catch(ex) { return onUnfulfilled(ex) }
       if (!doc || !doc._revs_info) {
         error = new Error('No document at : ' + url);
         return onUnfulfilled(error);
@@ -333,17 +332,21 @@ Overwatch.prototype.unfulfilled = function (db, couch, source, id, seq) {
         })
 
       return !fulfilled
-        ? onUnfulfilled(new Error('Failed to replicate in a timely manner'));
-        : onFulfilled()
+        ? onUnfulfilled(new Error('Failed to replicate in a timely manner'))
+        : onFulfilled();
     })
   );
 
   function onUnfulfilled(err) {
-    this.emit('unfulfilled', { error: err, db: db, target: couch, source: source});
-  }.bind(this);
+    //
+    // Remark: distill the hub couch as that will be needed if we want to do
+    // anything about replication
+    //
+    self.emit('unfulfilled', { error: err, db: db, target: couch, source: source, id: id});
+  }
 
   function onFulfilled () {
-    this.emit('fulfilled', { db: db, couch: couch, rev: rev, id: nId });
-  }.bind(this);
+    self.emit('fulfilled', { db: db, couch: couch, rev: rev, id: nId });
+  }
 
 };
