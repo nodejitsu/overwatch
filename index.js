@@ -31,6 +31,10 @@ var Overwatch = module.exports = function (options) {
   if (!Array.isArray(options.couches)) {
     throw new Error('You must provide an array of couch objects!');
   }
+
+  if (options.dbs && !Array.isArray(options.dbs)){
+    throw new Error('If you pass in dbs, it must be an array');
+  }
   //
   // Remark: Dirty configuration setup to support the couch options
   //
@@ -73,6 +77,9 @@ var Overwatch = module.exports = function (options) {
   this.filter = typeof options.filter === 'function'
     ? options.filter
     : function () { return true }
+
+  this.dbs = options.dbs || null;
+
   this.follow = options.follow || {};
   this.buffers = {};
   this.fulfillments = {};
@@ -89,13 +96,17 @@ util.inherits(Overwatch, events.EventEmitter);
 // Begin watching the couches!
 //
 Overwatch.prototype.watch = function () {
-  this.fetchDbs(this.setup.bind(this));
+  return !this.dbs
+  ? this.fetchDbs(this.setup.bind(this))
+  : this.setup();
+
 };
 
 //
 // ### function fetchDbs(callback)
 // #### @callback {function} Continuation to call upon fetch
-// Fetch the databases from the Hub CouchDB
+// Optionally fetch the databases from the Hub CouchDB if no databases were
+// passed in
 //
 Overwatch.prototype.fetchDbs = function (callback) {
   var self = this;
@@ -119,8 +130,10 @@ Overwatch.prototype.fetchDbs = function (callback) {
 // Setup all of the data structures
 //
 Overwatch.prototype.setup = function () {
+
   this.followers = this.dbs.reduce(function (acc, db) {
     var feeds = Object.keys(this.couches).reduce(function(assoc, url) {
+
       var opts = extend({ db: [url, db].join('/') }, this.follow),
           feed = assoc[url] = new follow.Feed(opts);
 
@@ -350,3 +363,4 @@ Overwatch.prototype.unfulfilled = function (db, couch, source, id, seq) {
   }
 
 };
+
