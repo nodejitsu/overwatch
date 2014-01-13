@@ -6,6 +6,9 @@ Overwatch is an `EventEmitter` that emits events reflecting various states of
 the couches it watches. It has a fairly simple api that allows you to easily
 watch and monitor `bi-directional` replication.
 
+Please note that we currently make the assumption that these databases are
+already replicating and we are just monitoring that this assumption is true.
+
 ## Design
 
 The design here is based around a [hub-and-spoke] concept of replication. This
@@ -42,7 +45,9 @@ one and not the other (with some extra checking involved),
 CouchDB has failed to fulfill its promise to us. This is
 where we emit the `unfulfilled` event for you to take action on this!
 
-## Example
+## Examples
+
+### Standard Usage
 
 ```js
 
@@ -134,6 +139,38 @@ watcher.on('catchUp', function(feed) {
 });
 
 ```
+
+### Configure DBs
+
+If you don't want to filter off of a call to `_all_dbs` on the `hub` couch, we
+also support specifying the `dbs` in an array directly!
+
+*Note: The dbs still need to exist or [`follow`][follow] will be very unhappy with you*
+
+```js
+var Overwatch = require('overwatch');
+
+//
+// Remark: subtle note that we support calling with or without `new`
+//
+var watcher = new Overwatch({
+  couches: [
+    { url: http://username:password@myCouch.iriscouch.com, hub: true },
+    { url: http://localhost:5984 }
+  ],
+  dbs: ['foo', 'bar', 'baz']
+});
+
+watcher.on('unfulfilled', function (unfulfilled) {
+  //
+  // Same as above example
+  //
+});
+
+```
+
+
+
 
 [hub-and-spoke]: https://en.wikipedia.org/wiki/Hub_and_spoke
 [follow]: https://github.com/iriscouch/follow
