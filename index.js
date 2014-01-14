@@ -5,7 +5,7 @@
  *
  */
 
-var follow = require('follow'),
+var follow = require('follow-stream'),
     util = require('util'),
     events = require('events'),
     hyperquest = require('hyperquest'),
@@ -81,9 +81,7 @@ var Overwatch = module.exports = function (options) {
   this.dbs = options.dbs || null;
 
   this.follow = options.follow || {};
-  this.buffers = {};
   this.fulfillments = {};
-
 };
 
 //
@@ -134,11 +132,8 @@ Overwatch.prototype.setup = function () {
   this.followers = this.dbs.reduce(function (acc, db) {
     var feeds = Object.keys(this.couches).reduce(function(assoc, url) {
 
-      var opts = extend({ db: [url, db].join('/') }, this.follow),
-          feed = assoc[url] = new follow.Feed(opts);
-
-      this.buffers[db] = this.buffers[db] || {};
-      this.buffers[db][url] = [];
+      var opts = extend({ db: [url, db].join('/'), highWaterMark: Infinity }, this.follow),
+          feed = assoc[url] = follow(opts);
 
       this.fulfillments[db] = this.fulfillments[db] || {};
       this.fulfillments[db][url] = {};
@@ -148,10 +143,7 @@ Overwatch.prototype.setup = function () {
       // TODO: Figure out how to not ALWAYS buffer changes if we want to
       // just start auditing from the live state
       //
-      feed.on('change', this.bufferChange.bind(this, db, url));
       feed.on('error', this.emit.bind(this, 'error'));
-
-      feed.follow();
 
       return assoc;
     }.bind(this), {});
@@ -176,13 +168,17 @@ Overwatch.prototype.onCatchUp = function (db, couch, seqId) {
   // A proxy of follow's catchup event
   //
   this.emit('catchUp', { db: db, couch: couch, seqId: seqId });
+  //
+  // This is purely to emit the `live` event if we really even care
+  //
+  this._seqs[db][couch] = seqId;
 
   var allCaughtUp =
     Object.keys(this.followers[db])
       .filter(function (feedKey) {
         return feedKey !== couch;
       }).every(function (key) {
-        return this.followers[db][key].caught_up;
+        return this.followers[db][key].feed.caught_up;
   }, this);
 
   //
@@ -191,65 +187,24 @@ Overwatch.prototype.onCatchUp = function (db, couch, seqId) {
   // audit
   //
   if (allCaughtUp) {
-    this.switchFeedState(db);
-    this.audit(db);
+    this.enableProcessing(db);
   }
 };
 
 //
-// ### function switchFeedState(db)
-// #### @db {String} Database that we are switching the feeds for
-// Switch the state of the feed from buffering to processing so that we can
-// then perform a full Audit and begin processing live changes
+// ### function enableProcessing(db)
+// #### @db {String} Database that we are enabling the process
+// Sets up the various listeners for the feeds
 //
-Overwatch.prototype.switchFeedState = function (db) {
+Overwatch.prototype.enableProcessing = function (db) {
   var feeds = this.followers[db],
       feedKeys = Object.keys(feeds);
 
   for (var i=0; i<feedKeys.length; i++) {
-    feeds[feedKeys[i]].removeAllListeners('change');
-    feeds[feedKeys[i]].on('change', this.processChange.bind(this, db, feedKeys[i]));
+    feeds[feedKeys[i]].on('readable', this.processChange.bind(this, db, feedKeys[i]));
   }
-};
-
-//
-// ### function audit(db)
-// #### @db {String} database we are auditing for all the couches
-// Emit all of the buffered changes on the various feeds for this database
-// in order to perform a full audit
-//
-Overwatch.prototype.audit = function (db) {
-  var feeds = this.followers[db],
-      buffers = this.buffers[db],
-      bufferKeys = Object.keys(buffers);
 
   this.emit('audit', db);
-
-  for (var i=0; i<bufferKeys.length; i++) {
-    emitAllTheThings(bufferKeys[i]);
-  }
-
-  this.emit('live', db);
-
-  function emitAllTheThings (key) {
-    var change;
-
-    while (change = buffers[key].shift()) {
-      feeds[key].emit('change', change);
-    }
-  }
-
-};
-
-//
-// ### function bufferChange (db, couch, change)
-// #### @db {String} Name of database we are buffering for
-// #### @couch {String} URL of the couch we are monitoring
-// #### @change {Change} Follow change object to push onto the array
-// Buffer each change object onto the appropriate buffer
-//
-Overwatch.prototype.bufferChange = function (db, couch, change) {
-  this.buffers[db][couch].push(change);
 };
 
 //
@@ -260,39 +215,50 @@ Overwatch.prototype.bufferChange = function (db, couch, change) {
 // Process the change from the follow feed that either sets up a fulfillment
 // or fulfill a previous fulfillment
 //
-Overwatch.prototype.processChange = function (db, couch, change) {
-  var fulfillments = this.fulfillments[db],
+Overwatch.prototype.processChange = function (db, couch) {
+  var stream = this.followers[db][couch],
+      fulfillments = this.fulfillments[db],
       fKeys = Object.keys(fulfillments),
       timeout = this.timeout,
-      //
-      // This should always be valid
-      //
-      rev = change.changes && change.changes[0].rev,
-      id = change.id + '@' + rev;
+      change;
 
-  this.emit('processChange', { db: db, couch: couch, rev: rev, id: change.id });
   //
-  // Check for fulfillments for this change,
-  // if there are no fulfillments, set a fulfillment on the other couches
+  // Remark: this will run `n` number of times while there is data buffered
+  // but will eventually only run when we are readable and this function is
+  // called.
   //
-  if (!fulfillments[couch][id]) {
-    this.emit('setFulfillment', { db: db, couch: couch, rev: rev, id: change.id });
-    return fKeys.filter(function (couchUrl) {
-      return couchUrl !== couch;
-    })
-    .forEach(function (key) {
-      fulfillments[key][id] =
-        setTimeout(this.unfulfilled.bind(this, db, key, couch, id, change.seq), timeout);
-    }, this);
+  while (change = stream.read()) {
+
+    //
+    // This should always be valid
+    //
+    var rev = change.changes && change.changes[0].rev,
+        id = change.id + '@' + rev;
+
+    this.emit('processChange', { db: db, couch: couch, rev: rev, id: change.id });
+    //
+    // Check for fulfillments for this change,
+    // if there are no fulfillments, set a fulfillment on the other couches
+    //
+    if (!fulfillments[couch][id]) {
+      this.emit('setFulfillment', { db: db, couch: couch, rev: rev, id: change.id });
+      return fKeys.filter(function (couchUrl) {
+        return couchUrl !== couch;
+      })
+      .forEach(function (key) {
+        fulfillments[key][id] =
+          setTimeout(this.unfulfilled.bind(this, db, key, couch, id, change.seq), timeout);
+      }, this);
+    }
+
+    //
+    // Remark: Ok so if we have a fulfillment for ourselves, replication
+    // succeeded and couch is behaving properly
+    //
+    this.emit('fulfilled', { db: db, couch: couch, rev: rev, id: change.id})
+    clearTimeout(fulfillments[couch][id]);
+    this.fulfillments[db][couch][id] = null;
   }
-
-  //
-  // Remark: Ok so if we have a fulfillment for ourselves, replication
-  // succeeded and couch is behaving properly
-  //
-  this.emit('fulfilled', { db: db, couch: couch, rev: rev, id: change.id})
-  clearTimeout(fulfillments[couch][id]);
-  this.fulfillments[db][couch][id] = null;
 };
 
 //
