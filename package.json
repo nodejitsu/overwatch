@@ -1,7 +1,13 @@
 {
   "name": "overwatch",
   "description": "A deterministic couchdb replication watcher",
-  "keywords": ["couchdb", "replication", "watcher", "overwatch", "follow"],
+  "keywords": [
+    "couchdb",
+    "replication",
+    "watcher",
+    "overwatch",
+    "follow"
+  ],
   "version": "0.1.2",
   "author": "Jarrett Cruger <jcrugzz@gmail.com>",
   "repository": {
@@ -17,7 +23,7 @@
   "dependencies": {
     "hyperquest": "~0.1.8",
     "concat-stream": "~1.2.1",
-    "follow": "~0.10.4"
+    "follow-stream": "~0.1.0"
   },
   "devDependencies": {
     "tape": "2.1.x"
