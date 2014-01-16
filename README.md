@@ -155,8 +155,8 @@ var Overwatch = require('overwatch');
 //
 var watcher = new Overwatch({
   couches: [
-    { url: http://username:password@myCouch.iriscouch.com, hub: true },
-    { url: http://localhost:5984 }
+    { url: 'http://username:password@myCouch.iriscouch.com', hub: true },
+    { url: 'http://localhost:5984' }
   ],
   dbs: ['foo', 'bar', 'baz']
 });
