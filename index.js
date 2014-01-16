@@ -306,13 +306,12 @@ Overwatch.prototype.processChange = function (db, couch, change) {
 // and emit `unfulfilled` if that happens to be the case
 //
 Overwatch.prototype.unfulfilled = function (db, couch, source, id, seq) {
-  var self = this;
+  var self = this,
       pieces = id.split('@'),
       nId = pieces[0],
       rev = pieces[1],
       url = [couch, db, nId].join('/')
-        + '?revs_info=true&conflicts=true&deleted_conflicts=true',
-      error;
+        + '?revs_info=true&conflicts=true&deleted_conflicts=true';
 
   //
   // Remark: Query the doc with revs_info and conflicts and
@@ -324,8 +323,7 @@ Overwatch.prototype.unfulfilled = function (db, couch, source, id, seq) {
       try { doc = JSON.parse(doc) }
       catch(ex) { return onUnfulfilled(ex) }
       if (!doc || !doc._revs_info) {
-        error = new Error('No document at : ' + url);
-        return onUnfulfilled(error);
+        return onUnfulfilled(new Error('No document at : ' + url));
       }
       //
       // Check and see if the revision exists somewhere in the tree, if not
