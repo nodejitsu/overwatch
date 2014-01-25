@@ -165,7 +165,7 @@ Overwatch.prototype.setup = function () {
 // ### function onCatchUp (db, couch, seqId)
 // #### @db {String} Database that just caught up to live
 // #### @couch {String} couch URL that just caught up to live
-// #### @seqId {Number} Seqeunce ID of the couch
+// #### @seqId {Number} Seqeunce ID of the couch database
 // Called on follow's catchup event and checks the associated couches to see if
 // they have also caught up already. If this is the case, we switch the feed
 // state and begin auditing and watching the couches!
@@ -175,7 +175,7 @@ Overwatch.prototype.onCatchUp = function (db, couch, seqId) {
   //
   // A proxy of follow's catchup event
   //
-  this.emit('catchUp', { db: db, couch: couch, seqId: seqId });
+  this.emit('catchUp', { db: db, couch: couch, seq: seqId });
 
   var allCaughtUp =
     Object.keys(this.followers[db])
@@ -268,9 +268,10 @@ Overwatch.prototype.processChange = function (db, couch, change) {
       // This should always be valid
       //
       rev = change.changes && change.changes[0].rev,
-      id = change.id + '@' + rev;
+      id = change.id + '@' + rev,
+      seq = change.seq;
 
-  this.emit('processChange', { db: db, couch: couch, rev: rev, id: change.id });
+  this.emit('processChange', { db: db, couch: couch, rev: rev, id: change.id, seq: seq });
   //
   // Check for fulfillments for this change,
   // if there are no fulfillments, set a fulfillment on the other couches
@@ -282,7 +283,7 @@ Overwatch.prototype.processChange = function (db, couch, change) {
     })
     .forEach(function (key) {
       fulfillments[key][id] =
-        setTimeout(this.unfulfilled.bind(this, db, key, couch, id, change.seq), timeout);
+        setTimeout(this.unfulfilled.bind(this, db, key, couch, id, seq), timeout);
     }, this);
   }
 
