@@ -108,7 +108,8 @@ watcher.on('processChange', function (change) {
   console.log('couch url ' + change.couch)
   console.log('database ' + change.db);
   console.log('revision ' + change.rev);
-  console.log('doc id ' + change.id)
+  console.log('doc id ' + change.id);
+  console.log('update seq ' + change.seq);
 });
 
 //
@@ -135,7 +136,7 @@ watcher.on('unfulfilled', function (unfulfilled) {
 //
 watcher.on('catchUp', function(feed) {
   console.log('Feed for ' + feed.db ' on couch url' + feed.couch
-    + ' is caught up with sequence id ' + feed.seqId);
+    + ' is caught up with sequence id ' + feed.seq);
 });
 
 ```
