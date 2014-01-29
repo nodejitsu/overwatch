@@ -54,10 +54,7 @@ var Overwatch = module.exports = function (options) {
       //
       acc[couch.url] = couch.hub
         ? { hub: couch.hub }
-        : {
-          push: couch.push === false ? false : true,
-          pull: couch.pull === false ? false : true
-        };
+        : { pullOnly: couch.pullOnly || false };
       return acc;
     }.bind(this), {}
   );
@@ -278,9 +275,15 @@ Overwatch.prototype.processChange = function (db, couch, change) {
   //
   if (!fulfillments[couch][id]) {
     this.emit('setFulfillment', { db: db, couch: couch, rev: rev, id: change.id });
+    //
+    // Remark: Ok so by default we ALWAYS filter out the couch where the change
+    // was just received and when the couch that received the change is set to
+    // have pullOnly = true, we set no fulfillments on other couches since we
+    // just accept changes, we do not delegate
+    //
     return fKeys.filter(function (couchUrl) {
-      return couchUrl !== couch;
-    })
+      return couchUrl !== couch && !this.couches[couch].pullOnly;
+    }, this)
     .forEach(function (key) {
       fulfillments[key][id] =
         setTimeout(this.unfulfilled.bind(this, db, key, couch, id, seq), timeout);
