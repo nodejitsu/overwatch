@@ -55,9 +55,10 @@ var overwatch = require('overwatch');
 
 var watcher = overwatch({
   //
-  // each couch has a `pull` and `push` property set to true by default
-  // signaling the type of replication if it is not the hub.
+  // For each couch that is not the hub, it has an optional `pullOnly` property
+  // if you do not need to ensure bi-directional replication.
   // Also, the set of dbs for replication will be pulled from the `hub` couch
+  // by default if they are not specified directly
   //
   couches: [
     { url: 'http://username:password@myDB.iriscouch.com', hub: true },
