@@ -326,9 +326,21 @@ Overwatch.prototype.unfulfilled = function (db, couch, source, id, seq) {
     .pipe(concat(function (doc) {
       try { doc = JSON.parse(doc) }
       catch(ex) { return onUnfulfilled(ex) }
-      if (!doc || !doc._revs_info) {
-        return onUnfulfilled(new Error('No document at : ' + url));
+      //
+      // Remark: If document has been deleted, then it was totally a valid
+      // change so don't emit unfulfilled
+      //
+      if (doc.error === 'not_found'
+           && doc.reason === 'deleted') {
+        return onFulfilled('Document has been deleted');
       }
+      //
+      // Remark: we need to be able to check things
+      //
+      if (!doc.revs_info.length) {
+        return onUnfulfilled(new Error('No revs_info, cannot check history at ' + url));
+      }
+
       //
       // Check and see if the revision exists somewhere in the tree, if not
       // this is actually REALLY BAD and replication is probably down.
@@ -360,8 +372,8 @@ Overwatch.prototype.unfulfilled = function (db, couch, source, id, seq) {
     self.emit('unfulfilled', { error: err, db: db, target: couch, source: source, id: id});
   }
 
-  function onFulfilled () {
-    self.emit('fulfilled', { db: db, couch: couch, rev: rev, id: nId });
+  function onFulfilled (reason) {
+    self.emit('fulfilled', { db: db, couch: couch, rev: rev, id: nId, reason: reason });
   }
 
 };
