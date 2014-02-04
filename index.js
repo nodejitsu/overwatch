@@ -326,6 +326,9 @@ Overwatch.prototype.unfulfilled = function (db, couch, source, id, seq) {
     .pipe(concat(function (doc) {
       try { doc = JSON.parse(doc) }
       catch(ex) { return onUnfulfilled(ex) }
+      if (!doc) {
+        return onUnfulfilled(new Error('No document found at ' + url));
+      }
       //
       // Remark: If document has been deleted, then it was totally a valid
       // change so don't emit unfulfilled
