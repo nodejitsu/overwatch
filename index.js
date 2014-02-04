@@ -340,7 +340,7 @@ Overwatch.prototype.unfulfilled = function (db, couch, source, id, seq) {
       //
       // Remark: we need to be able to check things
       //
-      if (!doc.revs_info.length) {
+      if (!doc.revs_info || !doc.revs_info.length) {
         return onUnfulfilled(new Error('No revs_info, cannot check history at ' + url));
       }
 
