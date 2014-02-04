@@ -2,7 +2,7 @@
   "name": "overwatch",
   "description": "A deterministic couchdb replication watcher",
   "keywords": ["couchdb", "replication", "watcher", "overwatch", "follow"],
-  "version": "0.2.2",
+  "version": "0.2.3",
   "author": "Jarrett Cruger <jcrugzz@gmail.com>",
   "repository": {
     "url": "git://github.com/jcrugzz/overwatch.git"
