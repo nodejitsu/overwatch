@@ -343,6 +343,13 @@ Overwatch.prototype.unfulfilled = function (db, couch, source, id, seq) {
       return onFulfilled('Document has been deleted');
     }
     //
+    // Explicitly see if we are missing the package
+    //
+    if (doc.error === 'not_found'
+          && doc.reason === 'missing') {
+      return onUnfulfilled(new Error(nId + ' package failed to replicate'))
+    }
+    //
     // Remark: we need to be able to check things
     //
     if (!doc._revs_info || !doc._revs_info.length) {
