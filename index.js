@@ -8,8 +8,7 @@
 var follow = require('follow'),
     util = require('util'),
     events = require('events'),
-    hyperquest = require('hyperquest'),
-    concat = require('concat-stream');
+    request = require('request');
 
 var extend = util._extend;
 
@@ -108,18 +107,21 @@ Overwatch.prototype.watch = function () {
 Overwatch.prototype.fetchDbs = function (callback) {
   var self = this;
 
-  hyperquest(this.hub + '/_all_dbs')
-    .pipe(concat(function (dbs) {
-      try { dbs = JSON.parse(dbs) }
-      catch (ex) { self.emit('error', new Error('Hub DB unreachable')) }
+  request({
+    method: 'GET',
+    uri: this.hub + '/_all_dbs',
+    json: true
+  }, function (err, res, dbs) {
+    if (err || res.statusCode != 200) {
+      return callback(err || new Error('_all_dbs responded with ' + res.statusCode));
+    }
       self.dbs = dbs.filter(self.filter);
       //
       // TODO: Start replication on spoke DBs based on the hub dbs if they do
       // not exist. We'll also need to do some trickery to postpone audit
       //
       callback();
-    })
-  );
+  });
 };
 
 //
@@ -321,51 +323,53 @@ Overwatch.prototype.unfulfilled = function (db, couch, source, id, seq) {
   // Remark: Query the doc with revs_info and conflicts and
   // assess the false positive because sometimes ALL the revisions
   //
-  hyperquest(url)
-    .on('error', onUnfulfilled)
-    .pipe(concat(function (doc) {
-      try { doc = JSON.parse(doc) }
-      catch(ex) { return onUnfulfilled(ex) }
-      if (!doc) {
-        return onUnfulfilled(new Error('No document found at ' + url));
-      }
-      //
-      // Remark: If document has been deleted, then it was totally a valid
-      // change so don't emit unfulfilled
-      //
-      if (doc.error === 'not_found'
-           && doc.reason === 'deleted') {
-        return onFulfilled('Document has been deleted');
-      }
-      //
-      // Remark: we need to be able to check things
-      //
-      if (!doc.revs_info || !doc.revs_info.length) {
-        return onUnfulfilled(new Error('No revs_info, cannot check history at ' + url));
-      }
+  request({
+    method: 'GET',
+    uri: url,
+    json: true
+  }, function (err, res, doc) {
+    if (err || (res.statusCode != 200 && res.statusCode != 404)) {
+      return onUnfulfilled(err || new Error('Failed with code ' + res.statusCode + ' on request'));
+    }
+    if (!doc) {
+      return onUnfulfilled(new Error('No document found at ' + url));
+    }
+    //
+    // Remark: If document has been deleted, then it was totally a valid
+    // change so don't emit unfulfilled
+    //
+    if (doc.error === 'not_found'
+          && doc.reason === 'deleted') {
+      return onFulfilled('Document has been deleted');
+    }
+    //
+    // Remark: we need to be able to check things
+    //
+    if (!doc._revs_info || !doc._revs_info.length) {
+      return onUnfulfilled(new Error('No revs_info, cannot check history at ' + url));
+    }
 
-      //
-      // Check and see if the revision exists somewhere in the tree, if not
-      // this is actually REALLY BAD and replication is probably down.
-      // We check revs in the current tree, any possible conflicts and deleted
-      // conflicts if it was resolved.
-      //
-      var fulfilled =
-        doc._revs_info.some(function(info) {
-          return info.rev === rev;
-        })
-        || doc._conflicts && doc._conflicts.some(function (_rev) {
-          return _rev === rev;
-        })
-        || doc._deleted_conflicts && doc._deleted_conflicts.some(function (_rev) {
-          return _rev === rev;
-        })
+    //
+    // Check and see if the revision exists somewhere in the tree, if not
+    // this is actually REALLY BAD and replication is probably down.
+    // We check revs in the current tree, any possible conflicts and deleted
+    // conflicts if it was resolved.
+    //
+    var fulfilled =
+      doc._revs_info.some(function(info) {
+        return info.rev === rev;
+      })
+      || doc._conflicts && doc._conflicts.some(function (_rev) {
+        return _rev === rev;
+      })
+      || doc._deleted_conflicts && doc._deleted_conflicts.some(function (_rev) {
+        return _rev === rev;
+      })
 
-      return !fulfilled
-        ? onUnfulfilled(new Error('Failed to replicate in a timely manner'))
-        : onFulfilled();
-    })
-  );
+    return !fulfilled
+      ? onUnfulfilled(new Error('Failed to replicate in a timely manner or in conflicted state on hub'))
+      : onFulfilled();
+  });
 
   function onUnfulfilled(err) {
     //
