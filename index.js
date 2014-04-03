@@ -8,7 +8,7 @@
 var follow = require('follow'),
     util = require('util'),
     events = require('events'),
-    request = require('request');
+    request = require('request').defaults({ strictSSL: false, maxSockets: 1000 });
 
 var extend = util._extend;
 
